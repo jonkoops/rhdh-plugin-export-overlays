@@ -1,11 +1,14 @@
 """Tests for pure-logic functions in generateCatalogIndex.py."""
 
+import subprocess
+
 import pytest
 
 from generateCatalogIndex import (
     build_digest_comment_map,
     digest_from_oci_package_line,
     get_image_name_from_package_yaml,
+    inject_dpdy_tag_comments,
     get_query_registry_reference,
     is_tag_comment_line,
     oci_value_matches_plugin,
@@ -16,6 +19,23 @@ from generateCatalogIndex import (
     trailing_tag_comment_matches,
     update_package_files,
 )
+
+
+def test_inject_failure_stops_catalog_generation(tmp_path, monkeypatch):
+    dpdy = tmp_path / "dynamic-plugins.default.yaml"
+    dpdy.write_text("plugins:\n  - package: oci://quay.io/rhdh/plugin:1.0\n")
+    builds = tmp_path / "plugin_builds"
+
+    def failed_inject(command, **kwargs):
+        assert command[:3] == ["vp", "exec", "inject-dpdy-tag-comments"]
+        assert command[3:] == [str(dpdy), str(builds)]
+        assert kwargs["check"] is True
+        assert kwargs["cwd"].name == "scripts"
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr("generateCatalogIndex.subprocess.run", failed_inject)
+    with pytest.raises(subprocess.CalledProcessError):
+        inject_dpdy_tag_comments(tmp_path, builds)
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +389,9 @@ class TestUpdatePackageFilesDpdyMatching:
         "abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd"
     )
 
-    def _run(self, tmp_path, placeholder_line):
+    def _run(self, tmp_path, placeholder_line, monkeypatch):
+        # Placeholder matching is independent of the external injector CLI.
+        monkeypatch.setattr("generateCatalogIndex.inject_dpdy_tag_comments", lambda *_: None)
         (tmp_path / "catalog-entities" / "extensions" / "packages").mkdir(parents=True)
         dpdy = tmp_path / "dynamic-plugins.default.yaml"
         dpdy.write_text(f"plugins:\n{placeholder_line}    disabled: true\n")
@@ -384,26 +406,26 @@ class TestUpdatePackageFilesDpdyMatching:
         update_package_files(tmp_path, index_data, [self.PLUGIN_NAME], tmp_path)
         return dpdy.read_text()
 
-    def test_fragmentless_placeholder_is_resolved(self, tmp_path):
+    def test_fragmentless_placeholder_is_resolved(self, tmp_path, monkeypatch):
         """Reproduces the Lightspeed regression: a ghcr.io tag-pinned
         placeholder with no !fragment must still be replaced."""
         placeholder = (
             f"  - package: oci://ghcr.io/redhat-developer/rhdh-plugin-export-overlays/"
             f"{self.PLUGIN_NAME}:bs_1.49.4__2.8.6\n"
         )
-        result = self._run(tmp_path, placeholder)
+        result = self._run(tmp_path, placeholder, monkeypatch)
         assert f"oci://{self.RESOLVED_DIGEST_REF}" in result
         assert "ghcr.io" not in result
         assert "disabled: true" in result
 
-    def test_fragment_bearing_placeholder_is_resolved(self, tmp_path):
+    def test_fragment_bearing_placeholder_is_resolved(self, tmp_path, monkeypatch):
         """Legacy !fragment-bearing placeholders must still match via the
         backward-compatible pattern."""
         placeholder = (
             f"  - package: oci://ghcr.io/redhat-developer/rhdh-plugin-export-overlays/"
             f"{self.PLUGIN_NAME}:bs_1.49.4__2.8.6!{self.PLUGIN_NAME}\n"
         )
-        result = self._run(tmp_path, placeholder)
+        result = self._run(tmp_path, placeholder, monkeypatch)
         assert f"oci://{self.RESOLVED_DIGEST_REF}" in result
         assert "ghcr.io" not in result
         assert "disabled: true" in result

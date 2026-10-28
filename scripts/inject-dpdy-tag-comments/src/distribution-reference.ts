@@ -1,8 +1,10 @@
 // Catalog-index subset of https://github.com/distribution/reference (see reference.go, regexp.go).
 
 const domainLabel = `[a-z0-9](?:[a-z0-9-]*[a-z0-9])?`;
-const registryHost = `${domainLabel}(?:\\.${domainLabel})*`;
-const pathSegment = `[a-z0-9]+(?:-[a-z0-9]+)*`;
+const registryHost = `${domainLabel}(?:\\.${domainLabel})*(?::[0-9]+)?`;
+// Distribution repository names allow periods, underscores (including double
+// underscores), and runs of hyphens between alphanumeric components.
+const pathSegment = `[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*`;
 const repositoryPath = `${pathSegment}(?:/${pathSegment})*`;
 const tagSegment = `[\\w][\\w.-]{0,127}`;
 const digest = `sha256:[0-9a-fA-F]{64}`;

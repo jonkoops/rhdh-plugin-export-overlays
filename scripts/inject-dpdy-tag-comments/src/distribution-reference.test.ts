@@ -48,8 +48,22 @@ describe("parseReference", () => {
     expect(() => parseReference("my-plugin:latest")).toThrow("Invalid image reference");
   });
 
-  it("rejects host with port (localhost:5000)", () => {
-    expect(() => parseReference("localhost:5000/my/image:tag")).toThrow("Invalid image reference");
+  it("parses image names with valid repository separators", () => {
+    expect(parseReference("ghcr.io/acme/acme-plugin.foo:1.0")).toEqual({
+      path: "acme/acme-plugin.foo",
+      tag: "1.0",
+    });
+    expect(parseReference("ghcr.io/acme/plugin_backend__api--v2:1.0")).toEqual({
+      path: "acme/plugin_backend__api--v2",
+      tag: "1.0",
+    });
+  });
+
+  it("accepts registries with a port", () => {
+    expect(parseReference("localhost:5000/my/image:tag")).toEqual({
+      path: "my/image",
+      tag: "tag",
+    });
   });
 
   it("rejects wrong digest algorithm", () => {
